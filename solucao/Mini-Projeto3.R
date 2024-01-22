@@ -3,9 +3,9 @@
 # Leia os manuais em pdf no Capítulo 19 do curso.
 
 # Instalação dos pacotes
-install.packages("h2o")
+install.packages("h2o", dependencies = TRUE)
 install.packages("tidyverse")
-install.packages("ggbeeswarm")
+install.packages("ggbeeswarm", dependencies = TRUE)
 
 # Carrega os pacotes na sessão
 library(h2o)
