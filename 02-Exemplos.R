@@ -171,7 +171,7 @@ ggplot(df_var_contrib, aes(x = shap_value, fill = feature)) +
   theme_minimal(base_size = 15)
 
 
-# Obter a importância das variáveis do modelo líder (Forma 2 os valores são obtidos diretamente do modelo XGBoost)
+# Obter a importância das variáveis do modelo líder (Forma 2 os valores são obtidos diretamente do modelo líder)
 importancia_variaveis <- h2o.varimp(modelo_automl@leader)
 importancia_variaveis
 
@@ -195,6 +195,21 @@ ggplot(variaveis_importantes, aes(x = reorder(variable, relative_importance), y 
        y = "Importância") +
   theme_minimal() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+
+
+
+
+
+## Exemplo 2
+
+
+
+
+
+
+
+
 
 
 

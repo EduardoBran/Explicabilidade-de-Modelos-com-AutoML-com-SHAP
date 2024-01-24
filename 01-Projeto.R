@@ -125,7 +125,7 @@ var_contrib
 
 ## Visualizando o Resultado Final
 
-# Criando um dataframe com os as métricas que precisamos
+# Forma 1 de visualizar e obter resultados das variáveis mais importantes (usando métricas SHAP)
 df_var_contrib <- var_contrib %>%
   as.data.frame() %>%
   select(-BiasTerm) %>%
@@ -173,7 +173,9 @@ ggplot(df_var_contrib, aes(x = shap_value, y = reorder(feature, shap_importance)
 # do modelo e poderia inclusive ser descartada para a versão final do modelo.
 
 
-# Obter a importância das variáveis do modelo líder
+
+# Forma 2 de visualizar e obter resultados das variáveis mais importantes (os valores são obtidos diretamente do modelo líder GBM)
+# (os valores são obtidos diretamente do modelo líder XGBoost líder e representam a importância relativa de cada variável de acordo com o algoritmo específico utilizado (XGBoost, neste caso).
 importancia_variaveis <- h2o.varimp(modelo_automl@leader)
 importancia_variaveis
 
@@ -202,13 +204,18 @@ ggplot(variaveis_importantes, aes(x = reorder(variable, relative_importance), y 
 
 
 
-
-
-
-
-
 # Desliga o H2O
 h2o.shutdown()
+
+
+
+
+
+
+
+
+
+
 
 
 
