@@ -23,7 +23,7 @@ library(xgboost)        # carrega algoritimo de ML
 
 
 
-#####################  Exemplo 1 (mesma lógica do projeto)
+#####################  Exemplo 1 (mesma lógica do projeto) (análise de dados / escolha modelo auto ml)
 
 
 ## Etapa 1: Criação dos Dados Fictícios
@@ -206,7 +206,8 @@ ggplot(variaveis_importantes, aes(x = reorder(variable, relative_importance), y 
 
 
 
-##################### Exemplo 2
+
+##################### Exemplo 2  (análise de dados / escolha modelo auto ml / criacao do modelo em r / interface gráfica)
 
 # História:
 
@@ -455,7 +456,7 @@ head(dados)
 
 ## Desliga o H2O
 h2o.shutdown()
-write.csv(dados, file = "dados.csv", row.names = FALSE)
+# write.csv(dados, file = "dados.csv", row.names = FALSE)
 
 
 ## Criando Modelo No R
@@ -592,4 +593,218 @@ server <- function(input, output) {
 # Criar o aplicativo Shiny
 shinyApp(ui = ui, server = server)
 
+
+
+
+
+
+
+##################### Exemplo 3  (análise de dados / escolha modelo auto ml / criacao do modelo em r / interface gráfica)
+
+# História:
+
+#  -> Uma plataforma de comércio eletrônico está buscando otimizar a experiência do usuário e aumentar as taxas de conversão.
+#     A equipe de análise de dados identificou a necessidade de um sistema de recomendação personalizado para oferecer aos usuários
+#     produtos relevantes, aumentando assim as chances de compra.
+
+# Perguntas de Negócio:
+  
+# -> Quais são os principais fatores que influenciam a decisão de compra dos usuários?
+#    Identificar as variáveis mais impactantes que contribuem para as decisões de compra dos usuários.
+
+# -> Qual é o melhor modelo de sistema de recomendação para personalizar as sugestões de produtos?
+#    Avaliar diferentes algoritmos de sistemas de recomendação, como filtragem colaborativa, filtragem baseada em conteúdo ou híbridos, 
+#    para determinar o mais eficaz.
+
+# -> Como podemos criar um sistema de recomendação interpretável e explicável para a equipe de marketing?
+#    Desenvolver um modelo de interpretação para explicar as sugestões de produtos aos membros da equipe de marketing de maneira compreensível.
+
+# -> Qual é o impacto esperado na taxa de conversão após a implementação do sistema de recomendação personalizado?
+#    Avaliar o potencial aumento na taxa de conversão após a implementação do sistema de recomendação, medindo os resultados e comparando com
+#    os dados históricos.
+
+# -> Como podemos monitorar e ajustar continuamente o sistema de recomendação para manter a eficácia ao longo do tempo?
+#    Estabelecer um processo de monitoramento contínuo para avaliar o desempenho do sistema de recomendação e implementar ajustes conforme
+#    necessário.
+
+
+##  Criar dados fictícios
+dados <- data.frame(
+  usuario_id = seq(1, 4000),
+  idade = sample(18:65, 4000, replace = TRUE),
+  genero = sample(c("Masculino", "Feminino"), 4000, replace = TRUE),
+  historico_compras = sample(c("Baixo", "Médio", "Alto"), 4000, replace = TRUE, prob = c(0.4, 0.4, 0.2)),
+  categoria_preferida = sample(c("Eletrônicos", "Moda", "Esportes", "Casa", "Beleza"), 4000, replace = TRUE),
+  tempo_na_plataforma = sample(1:24, 4000, replace = TRUE),
+  produtos_visualizados = rpois(4000, lambda = 20),
+  nivel_atividade = sample(c("Baixo", "Médio", "Alto"), 4000, replace = TRUE, prob = c(0.3, 0.4, 0.3)),
+  realizou_compra = factor(rbinom(4000, 1, 0.47), levels = c(0, 1), labels = c("Não", "Sim")),
+  churn = factor(rbinom(4000, 1, 0.42), levels = c(0, 1), labels = c("Não", "Sim")),
+  produto_recomendado = sample(c("A", "B", "C", "D", "E"), 4000, replace = TRUE)
+)
+str(dados)
+
+
+## Salvando dataset
+# write.csv(dados, file = "dados_exemplo3.csv", row.names = FALSE)
+
+
+## Carregando dataset
+dados <- read.csv("dados_exemplo3.csv")
+str(dados)
+
+
+## Análise Exploratória + Eng de Atributos
+
+# Modificando qualquer variável chr para factor
+dados <- dados %>% 
+  mutate_if(is.character, factor)
+str(dados)
+summary(dados)
+head(dados)
+
+# Criação de Novas Características (Variáveis)
+dados <- dados %>%
+  mutate(
+    razao_produtos_tempo = produtos_visualizados / tempo_na_plataforma,
+    interacao_idade_produtos = idade * produtos_visualizados
+  )
+head(dados)
+str(dados)
+summary(dados)
+
+# Escalonamento de Variáveis Numéricas (Aplicar somente para Modelo Criado no Ambiente R)
+#dados <- dados %>%
+#  select(-usuario_id) %>% 
+#  mutate(across(where(is.numeric), scale))
+
+# Remoção da Variável Id
+dados <- dados %>%
+  select(-usuario_id)
+
+str(dados)
+summary(dados)
+head(dados)
+
+
+
+#### Aplicando AutoML
+
+## Inicialização do h2o
+h2o.init()
+
+# O H2O requer que os dados estejam no formato de dataframe do H2O
+h2o_frame <- as.h2o(dados)
+
+
+## Divisão dos Dados em Treino e Teste
+
+# Split dos dados em treino e teste (cria duas listas)
+h2o_frame_split <- h2o.splitFrame(h2o_frame, ratios = 0.85)
+head(h2o_frame_split)
+summary(h2o_frame_split)
+
+
+## Modelos AutoML
+
+# Modelo Realizou Compra
+modelo_automl_rc <- h2o.automl(y = 'realizou_compra',
+                               balance_classes = TRUE,
+                               training_frame = h2o_frame_split[[1]],
+                               nfolds = 4,
+                               leaderboard_frame = h2o_frame_split[[2]],
+                               max_runtime_secs = 60 * 2, 
+                               include_algos = c('XGBoost', 'GBM', 'GLM'),
+                               sort_metric = "AUC")
+
+# Modelo Taxa de Cancelamento
+modelo_automl_tc <- h2o.automl(y = 'churn',
+                               balance_classes = TRUE,
+                               training_frame = h2o_frame_split[[1]],
+                               nfolds = 4,
+                               leaderboard_frame = h2o_frame_split[[2]],
+                               max_runtime_secs = 60 * 2, 
+                               include_algos = c('XGBoost', 'GBM', 'GLM'),
+                               sort_metric = "AUC")
+
+# Modelo Produto Recomendado com Ajustes
+modelo_automl_pr <- h2o.automl(y = 'produto_recomendado',
+                               balance_classes = TRUE,
+                               training_frame = h2o_frame_split[[1]],
+                               nfolds = 4,
+                               leaderboard_frame = h2o_frame_split[[2]],
+                               max_runtime_secs = 60 * 20, 
+                               sort_metric = "logloss",               # Use logloss para classificação multiclasse
+                               exclude_algos = c("StackedEnsemble"))  # Excluir StackedEnsemble para simplificar
+
+
+
+
+# Extrai o leaderboard (dataframe com os modelos criados)
+leaderboard_automl_rc <- as.data.frame(modelo_automl_rc@leaderboard)
+leaderboard_automl_tc <- as.data.frame(modelo_automl_tc@leaderboard)
+leaderboard_automl_pr <- as.data.frame(modelo_automl_pr@leaderboard)
+head(leaderboard_automl_pr)
+View(leaderboard_automl_pr)
+
+# Extrai o líder (modelo com melhor performance)
+lider_automl_rc <- modelo_automl_rc@leader
+lider_automl_tc <- modelo_automl_tc@leader
+lider_automl_pr <- modelo_automl_pr@leader
+print(lider_automl_pr)
+View(lider_automl)
+
+
+# h2o.saveModel(lider_automl_rc, path = "modelos/modelo_automl_rc")
+# h2o.saveModel(lider_automl_tc, path = "modelos/modelo_automl_tc")
+# h2o.saveModel(lider_automl_pr, path = "modelos/modelo_automl_pr")
+
+rm(leaderboard_automl_rc)
+rm(leaderboard_automl_tc)
+rm(leaderboard_automl_pr)
+
+
+## Avaliação do Modelo (Confusion Matrix)
+
+## Avaliação do Modelo Binomial (Realizou Compra)
+perf_rc <- h2o.performance(lider_automl_rc)
+perf_rc                                  # Verifica todas as métricas
+
+print(h2o.mse(perf_rc))                  # Quanto mais próximo de zero, melhor. Valor encontrado: 0.02246815
+print(h2o.rmse(perf_rc))                 # Valores menores indicam melhor desempenho. Valor encontrado: 0.1298117
+print(h2o.logloss(perf_rc))              # Quanto mais próximo de zero, melhor. Valor encontrado: 0.1298117
+print(h2o.mean_per_class_error(perf_rc)) # Quanto mais próximo de zero, melhor. Valor encontrado: 0.004263429
+
+# Métricas Específicas para Classificação Binomial
+print(h2o.auc(perf_rc))                  # Um valor próximo de 1 indica bom desempenho. Valor encontrado: 0.9999331
+print(h2o.aucpr(perf_rc))                # Um valor próximo de 1 indica bom desempenho. Valor encontrado: 0.9999264
+
+# Matriz de Confusão
+h2o.confusionMatrix(perf_rc)             # Fornece uma visão detalhada do desempenho do modelo para cada classe.
+
+
+## Avaliação do Modelo Binomial (Taxa de Cancelamento)
+perf_tc <- h2o.performance(lider_automl_tc)
+perf_tc
+
+
+## Avaliação do Modelo Deep Learning (Produto Recomendado)
+perf_pr <- h2o.performance(lider_automl_pr)
+perf_pr
+
+
+
+## Plot da Importância das Variáveis
+
+# Extraindo do melhor modelo a contribuição de cada variável para as previsões através dos dados de teste
+# Estes valores são chamados de SHAP
+var_contrib <- predict_contributions.H2OModel(lider_automl, h2o_frame_split[[2]])
+var_contrib
+
+
+
+
+
+## Desliga o H2O
+h2o.shutdown()
 
