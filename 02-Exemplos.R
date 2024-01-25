@@ -15,10 +15,15 @@ library(randomForest)   # carrega algoritimo de ML
 library(ROCR)           # Gerando uma curva ROC em R
 library(caret)          # Cria confusion matrix
 library(shapper)
+library(shiny)          # interface gráfica
+library(shinyWidgets)
+library(xgboost)        # carrega algoritimo de ML
 
 
 
-#### Exemplo 1 (mesma lógica do projeto)
+
+
+#####################  Exemplo 1 (mesma lógica do projeto)
 
 
 ## Etapa 1: Criação dos Dados Fictícios
@@ -201,24 +206,390 @@ ggplot(variaveis_importantes, aes(x = reorder(variable, relative_importance), y 
 
 
 
-## Exemplo 2
+##################### Exemplo 2
+
+# História:
+
+#  -> Uma empresa de telecomunicações está enfrentando um problema crescente de churn, onde clientes estão cancelando seus serviços.
+#     A gerência está interessada em prever quais clientes têm maior probabilidade de cancelar, para que medidas proativas possam ser tomadas 
+#     para retê-los.
+
+# Perguntas de Negócio:
+
+#  -> Quais fatores/métricas mais contribuem para a previsão de churn?
+#  -> Qual é o melhor modelo de machine learning para prever o churn?
+#  -> Como podemos explicar e interpretar as previsões do modelo de maneira compreensível para a equipe de negócios?
 
 
 
+## Coleta e Análise dos Dados
+dados_telecom <- tibble(
+  tempo_assinatura = round(runif(3000, min = 1, max = 36), 0),                                  # Tempo de assinatura em meses
+  tipo_plano = sample(c("Básico", "Intermediário", "Avançado"), 3000, replace = TRUE),          # Tipo de plano
+  uso_servicos_adicionais = sample(c("Sim", "Não"), 3000, replace = TRUE, prob = c(0.4, 0.5)),  # Uso de serviços adicionais
+  reclamacoes_recentes = sample(c("Sim", "Não"), 3000, replace = TRUE, prob = c(0.42, 0.58)),   # Reclamações recentes
+  satisfacao_cliente = round(runif(3000, min = 1, max = 5), 1),                                 # Nível de satisfação do cliente
+  gasto_mensal = rnorm(3000, mean = 100, sd = 20),                                              # Gasto mensal em dólares
+  churn = sample(c("Sim", "Não"), 3000, replace = TRUE, prob = c(0.47, 0.53))                   # Variável alvo - Churn (cancelamento)
+)
 
 
 
+## Aplicando Eng. de Atributos e Adicionando Novas Variáveis 
+
+# Tempo de Assinatura - Criar categorias
+dados <- dados_telecom %>%
+  mutate(tempo_assinatura_categoria = case_when(
+    tempo_assinatura <= 12 ~ "Curto Prazo",
+    tempo_assinatura <= 24 ~ "Médio Prazo",
+    tempo_assinatura <= 36 ~ "Longo Prazo"
+  ))
+
+# Satisfação do Cliente - Criar categorias
+dados <- dados %>%
+  mutate(satisfacao_categoria = case_when(
+    satisfacao_cliente <= 2 ~ "Baixa",
+    satisfacao_cliente <= 4 ~ "Média",
+    satisfacao_cliente <= 5 ~ "Alta"
+  ))
+
+# Gasto Mensal - Criar faixas
+dados <- dados %>%
+  mutate(gasto_mensal_categoria = cut(gasto_mensal, breaks = c(0, 50, 100, 150, 200), labels = c("0-50", "51-100", "101-150", "151-200")))
 
 
 
+# Convertendo a variável alvo e qualquer variável chr para fator
+dados <- dados %>% 
+  mutate(churn = as.factor(churn)) %>%  
+  mutate_if(is.character, factor)
+str(dados)
+summary(dados)
 
 
 
+## Criando Modelo Para Seleção de Variáveis
+
+# Criando Modelo Para Seleção De Variáveis
+modelo <- randomForest(churn ~ ., data = dados, 
+                       ntree = 100, nodesize = 10, importance = T)
+
+print(modelo$importance)
+varImpPlot(modelo)
+importancia_ordenada <- modelo$importance[order(-modelo$importance[, 1]), , drop = FALSE] 
+df_importancia <- data.frame(
+  Variavel = rownames(importancia_ordenada),
+  Importancia = importancia_ordenada[, 1]
+)
+ggplot(df_importancia, aes(x = reorder(Variavel, -Importancia), y = Importancia)) +
+  geom_bar(stat = "identity", fill = "skyblue") +
+  labs(title = "Importância das Variáveis", x = "Variável", y = "Importância") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1, size = 10))
+
+
+rm(modelo)
+rm(importancia_ordenada)
+rm(df_importancia)
+# -> Resposta: As variáveis com maior impacto no cancelamento são: tipo_plano, satisfacao_cliente, gasto_mensal, uso_servicos_adicionais e
+#                                                                  reclamacoes_recentes
 
 
 
+## Inicialização do h2o
+h2o.init()
+
+# O H2O requer que os dados estejam no formato de dataframe do H2O
+dados <- dados %>% 
+  select(tipo_plano, satisfacao_cliente, gasto_mensal, uso_servicos_adicionais, reclamacoes_recentes, churn)
+h2o_frame <- as.h2o(dados)
 
 
+
+## Divisão dos Dados em Treino e Teste
+
+# Split dos dados em treino e teste (cria duas listas)
+h2o_frame_split <- h2o.splitFrame(h2o_frame, ratios = 0.80)
+head(h2o_frame_split)
+
+
+
+## Modelo AutoML
+modelo_automl <- h2o.automl(y = 'churn',
+                            balance_classes = TRUE,
+                            training_frame = h2o_frame_split[[1]],
+                            nfolds = 4,
+                            leaderboard_frame = h2o_frame_split[[2]],
+                            max_runtime_secs = 60 * 2, 
+                            include_algos = c('XGBoost', 'GBM', 'GLM'),
+                            sort_metric = "AUC")
+
+# Extrai o leaderboard (dataframe com os modelos criados)
+leaderboard_automl <- as.data.frame(modelo_automl@leaderboard)
+head(leaderboard_automl)
+View(leaderboard_automl)
+
+# Extrai o líder (modelo com melhor performance)
+lider_automl <- modelo_automl@leader
+print(lider_automl)
+View(lider_automl)
+
+
+
+## Avaliação do Modelo (Confusion Matrix)
+
+# Avalie o desempenho do modelo no conjunto de teste
+predicoes_teste <- h2o.predict(modelo_automl, newdata = h2o_frame_split[[2]])
+predicoes_teste_df <- as.data.frame(h2o.cbind(h2o_frame_split[[2]], predicoes_teste))
+confusion_matrix <- table(predicoes_teste_df$predict, predicoes_teste_df$churn)
+print(confusion_matrix)
+
+# Calcula a acurácia a partir da matriz de confusão
+sum(diag(confusion_matrix)) / sum(confusion_matrix)    # 50%
+
+
+
+## Plot da Importância das Variáveis
+
+# Extraindo do melhor modelo a contribuição de cada variável para as previsões através dos dados de teste
+# Estes valores são chamados de SHAP
+var_contrib <- predict_contributions.H2OModel(lider_automl, h2o_frame_split[[2]])
+var_contrib
+
+# Criando um dataframe com os as métricas que precisamos (Forma 1 de obter as variáveis mais importantes usando as métricas SHAP)
+df_var_contrib <- var_contrib %>%
+  as.data.frame() %>%
+  select(-BiasTerm) %>%
+  gather(feature, shap_value) %>%
+  group_by(feature) %>%
+  mutate(shap_importance = mean(abs(shap_value)), shap_force = mean(shap_value)) %>% 
+  ungroup()
+View(df_var_contrib)
+head(df_var_contrib)
+
+# Visualizando a média da importância de cada variável
+importance_summary <- df_var_contrib %>%
+  group_by(feature) %>%
+  summarise(mean_shap_importance = mean(shap_importance),
+            mean_shap_force = mean(shap_force)) %>% 
+  arrange(-mean_shap_importance)
+print(importance_summary)
+
+
+# Gráfico de barras da importância de cada variável para prever a variável alvo
+df_var_contrib_gra <- df_var_contrib %>% 
+  select(feature, shap_importance) %>%
+  distinct() %>% 
+  ggplot(aes(x = reorder(feature, shap_importance), y = shap_importance)) +
+  geom_col(fill = 'blue') +
+  coord_flip() +
+  xlab(NULL) +
+  ylab("Valor Médio das Métricas SHAP") +
+  theme_minimal(base_size = 15)
+
+# Gráfico de pares (pair plot) de cada variável para explicar a variável alvo
+ggplot(df_var_contrib, aes(x = shap_value, y = reorder(feature, shap_importance))) +
+  ggbeeswarm::geom_quasirandom(groupOnX = FALSE, varwidth = TRUE, size = 0.9, alpha = 0.5, width = 0.15) +
+  xlab("Contribuição da Variável") +
+  ylab(NULL) +
+  theme_minimal(base_size = 15)
+
+# Boxplot dos SHAP values por variável
+ggplot(df_var_contrib, aes(x = feature, y = shap_value)) +
+  geom_boxplot(fill = 'blue', alpha = 0.5) +
+  coord_flip() +
+  xlab(NULL) +
+  ylab("SHAP Value") +
+  theme_minimal(base_size = 15)
+
+# Gráfico de densidade dos SHAP values por variável
+ggplot(df_var_contrib, aes(x = shap_value, fill = feature)) +
+  geom_density(alpha = 0.5) +
+  xlab("SHAP Value") +
+  ylab(NULL) +
+  theme_minimal(base_size = 15)
+
+
+## Respondendo as Perguntas de Negócio
+
+# Quais fatores/métricas mais contribuem para a previsão de churn?
+  
+# -> De acordo com o modelo Random Forest e o modelo XGBoost (AutoML com SHAP), as variáveis mais importantes para prever o churn são:
+#    Random Forest : Tipo de plano, Satisfação do cliente, Gasto mensal, Uso de serviços adicionais, Reclamações recentes.
+#    XGBoost (SHAP): Gasto mensal, Satisfação do cliente, Uso de serviços adicionais, Reclamações recentes, Tipo de plano.
+
+# Qual é o melhor modelo de machine learning para prever o churn?
+
+# -> O melhor modelo de machine learning para prever o churn é o modelo líder do AutoML, que é um modelo XGBoost.
+
+# Como podemos explicar e interpretar as previsões do modelo de maneira compreensível para a equipe de negócios?
+
+# -> Utilizando a abordagem SHAP (SHapley Additive exPlanations), podemos explicar as previsões do modelo XGBoost da seguinte forma:
+#    Gasto Mensal:
+#      Maior contribuidor positivo para a previsão de churn. Aumentos no gasto mensal reduzem a probabilidade de churn.
+#    Satisfação do Cliente:
+#     Contribui positivamente para a previsão de churn. Clientes mais satisfeitos têm menor probabilidade de churn.
+#    Uso de Serviços Adicionais:
+#     Contribui positivamente, mas em menor medida.
+#    Reclamações Recentes:
+#     Contribui negativamente. Clientes com reclamações recentes têm maior probabilidade de churn.
+#    Tipo de Plano:
+#     Contribuição positiva, mas é menos influente que as variáveis mencionadas anteriormente.
+
+
+
+## Salvando o modelo
+
+# Salvar o modelo para um diretório específico
+# h2o.saveModel(modelo_automl@leader, path = "modelo_exemplo2")
+
+
+## Carregar o modelo a partir do diretório
+h2o.init()
+modelo_exemplo2 <- h2o.loadModel("modelos/modelo_exemplo2")
+modelo_exemplo2
+
+# Verificando variáveis usadas no modelo
+importancia_variaveis <- h2o.varimp(modelo_exemplo2)
+print(importancia_variaveis)
+head(dados)
 
 ## Desliga o H2O
 h2o.shutdown()
+write.csv(dados, file = "dados.csv", row.names = FALSE)
+
+
+## Criando Modelo No R
+
+## Carregando dados
+dados <- read.csv("dados_exemplo2.csv")
+str(dados)
+
+# Convertendo a variável alvo e qualquer variável chr para fator
+dados <- dados %>%
+  mutate_if(is.character, factor)
+str(dados)
+summary(dados)
+
+# Dividindo os dados em treino e teste
+indices <- createDataPartition(dados$churn, p = 0.85, list = FALSE)
+dados_treino <- dados[indices, ]
+dados_teste <- dados[-indices, ]
+rm(indices)
+
+
+# Criar a matriz DMatrix para o xgboost
+dados_matrix_treino <- xgb.DMatrix(
+  data = model.matrix(churn ~ . - 1, data = dados_treino),
+  label = as.integer(dados_treino$churn) - 1
+)
+dados_matrix_teste <- xgb.DMatrix(
+  data = model.matrix(churn ~ . - 1, data = dados_teste),
+  label = as.integer(dados_teste$churn) - 1
+)
+
+## Criando Modelo
+
+# Parâmetros do modelo (ajuste conforme necessário)
+parametros_modelo <- list(
+  objective = "binary:logistic",
+  eval_metric = "logloss",
+  eta = 0.3,
+  max_depth = 6,
+  subsample = 1,
+  colsample_bytree = 1,
+  min_child_weight = 1
+)
+
+# Treinar o modelo XGBoost
+modelo_xgboost_r <- xgboost(
+  params = parametros_modelo,
+  data = dados_matrix_treino,
+  nrounds = 100
+)
+summary(modelo_xgboost_r)
+
+
+## Avaliar o Modelo
+
+# Realizar previsões no conjunto de teste
+previsoes_teste <- predict(modelo_xgboost_r, dados_matrix_teste)
+
+# Converter as probabilidades em classes (1 ou 0)
+previsoes_classes <- ifelse(previsoes_teste > 0.5, 1, 0)
+
+# Matriz de Confusão
+confusion_matrix <- table(previsoes_classes, dados_teste$churn)
+print(confusion_matrix)
+
+# Acurácia
+accuracy <- sum(diag(confusion_matrix)) / sum(confusion_matrix)
+print(paste("Acurácia:", accuracy))
+
+
+
+## Interface Gráfica
+
+# Criar a matriz DMatrix para o xgboost
+dados_matrix_treino <- xgb.DMatrix(
+  data = model.matrix(churn ~ . - 1, data = dados_treino),
+  label = as.integer(dados_treino$churn) - 1
+)
+
+ui <- fluidPage(
+  titlePanel("Previsão de Churn"),
+  sidebarLayout(
+    sidebarPanel(
+      pickerInput(
+        "tipo_plano",
+        label = "Tipo de Plano:",
+        choices = unique(dados$tipo_plano),
+        options = list('actions-box' = TRUE),
+        multiple = FALSE
+      ),
+      sliderInput("satisfacao_cliente", "Satisfação do Cliente:", 1, 5, 3, step = 0.1),
+      numericInput("gasto_mensal", "Gasto Mensal:", 100, min = 31.47, max = 167.37),
+      selectInput("uso_servicos_adicionais", "Uso de Serviços Adicionais:", c("Não", "Sim")),
+      selectInput("reclamacoes_recentes", "Reclamações Recentes:", c("Não", "Sim")),
+      actionButton("verificar", "Verificar")
+    ),
+    mainPanel(
+      h4("Resultado da Previsão:"),
+      verbatimTextOutput("resultado")
+    )
+  )
+)
+
+# Definir a lógica do servidor
+server <- function(input, output) {
+  observeEvent(input$verificar, {
+    # Criar um dataframe com os dados inseridos pelo usuário
+    novo_dado <- data.frame(
+      tipo_plano = factor(input$tipo_plano, levels = levels(dados$tipo_plano)),
+      satisfacao_cliente = input$satisfacao_cliente,
+      gasto_mensal = input$gasto_mensal,
+      uso_servicos_adicionais = factor(input$uso_servicos_adicionais, levels = levels(dados$uso_servicos_adicionais)),
+      reclamacoes_recentes = factor(input$reclamacoes_recentes, levels = levels(dados$reclamacoes_recentes))
+    )
+    
+    # Ajustar o novo dado conforme necessário usando a fórmula do modelo treinado
+    novo_dado <- model.matrix(~ . - 1, data = novo_dado)
+    
+    # Fazer a previsão
+    previsao <- predict(modelo_xgboost_r, as.matrix(novo_dado), type = "response")
+    
+    # Exibir o resultado
+    output$resultado <- renderText({
+      if (previsao > 0.5) {
+        return("Cliente provavelmente irá cancelar.")
+      } else {
+        return("Cliente provavelmente não irá cancelar.")
+      }
+    })
+  })
+}
+
+
+# Criar o aplicativo Shiny
+shinyApp(ui = ui, server = server)
+
+
