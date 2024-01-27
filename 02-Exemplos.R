@@ -16,8 +16,10 @@ library(ROCR)           # Gerando uma curva ROC em R
 library(caret)          # Cria confusion matrix
 library(shapper)
 library(shiny)          # interface gráfica
+library(shinyjs)
 library(shinyWidgets)
 library(xgboost)        # carrega algoritimo de ML
+library(Metrics)
 
 
 
@@ -507,8 +509,6 @@ modelo_xgboost_r <- xgboost(
   data = dados_matrix_treino,
   nrounds = 100
 )
-summary(modelo_xgboost_r)
-
 
 ## Avaliar o Modelo
 
@@ -525,6 +525,10 @@ print(confusion_matrix)
 # Acurácia
 accuracy <- sum(diag(confusion_matrix)) / sum(confusion_matrix)
 print(paste("Acurácia:", accuracy))
+
+# Verificar o comprimento dos vetores
+length(previsoes_classes)
+length(dados_teste$churn)
 
 
 
@@ -649,6 +653,7 @@ str(dados)
 # write.csv(dados, file = "dados_exemplo3.csv", row.names = FALSE)
 
 
+
 ## Carregando dataset
 dados <- read.csv("dados_exemplo3.csv")
 str(dados)
@@ -733,73 +738,135 @@ modelo_automl_pr <- h2o.automl(y = 'produto_recomendado',
                                training_frame = h2o_frame_split[[1]],
                                nfolds = 4,
                                leaderboard_frame = h2o_frame_split[[2]],
-                               max_runtime_secs = 60 * 20, 
+                               max_runtime_secs = 60 * 22, 
                                sort_metric = "logloss",               # Use logloss para classificação multiclasse
                                exclude_algos = c("StackedEnsemble"))  # Excluir StackedEnsemble para simplificar
 
 
-
-
 # Extrai o leaderboard (dataframe com os modelos criados)
-leaderboard_automl_rc <- as.data.frame(modelo_automl_rc@leaderboard)
+leaderboard_automl_rc <- as.data.frame(modelo_rc@leaderboard)
 leaderboard_automl_tc <- as.data.frame(modelo_automl_tc@leaderboard)
 leaderboard_automl_pr <- as.data.frame(modelo_automl_pr@leaderboard)
 head(leaderboard_automl_pr)
 View(leaderboard_automl_pr)
+
 
 # Extrai o líder (modelo com melhor performance)
 lider_automl_rc <- modelo_automl_rc@leader
 lider_automl_tc <- modelo_automl_tc@leader
 lider_automl_pr <- modelo_automl_pr@leader
 print(lider_automl_pr)
-View(lider_automl)
+View(lider_automl_pr)
 
+
+## Salvando Modelos (formato h2o e RDS)
 
 # h2o.saveModel(lider_automl_rc, path = "modelos/modelo_automl_rc")
+# saveRDS(lider_automl_rc, file = "modelos/modelo_automl_rc/XGBoost_R.rds")
 # h2o.saveModel(lider_automl_tc, path = "modelos/modelo_automl_tc")
-# h2o.saveModel(lider_automl_pr, path = "modelos/modelo_automl_pr")
+# saveRDS(lider_automl_tc, file = "modelos/modelo_automl_tc/XGBoost_R.rds")
+# h2o.saveModel(lider_automl_pr, path = "modelos/modelo_automl_pr2")
+# saveRDS(lider_automl_pr, file = "modelos/modelo_automl_pr/GLM_R.rds")
+
+modelo_rc <- h2o.loadModel("modelos/modelo_automl_rc/XGBoost_AutoML")
+modelo_rc
 
 rm(leaderboard_automl_rc)
 rm(leaderboard_automl_tc)
 rm(leaderboard_automl_pr)
 
 
-## Avaliação do Modelo (Confusion Matrix)
+
+#### Avaliação dos Modelos
 
 ## Avaliação do Modelo Binomial (Realizou Compra)
-perf_rc <- h2o.performance(lider_automl_rc)
+perf_rc <- h2o.performance(modelo_rc)
 perf_rc                                  # Verifica todas as métricas
 
-print(h2o.mse(perf_rc))                  # Quanto mais próximo de zero, melhor. Valor encontrado: 0.02246815
-print(h2o.rmse(perf_rc))                 # Valores menores indicam melhor desempenho. Valor encontrado: 0.1298117
-print(h2o.logloss(perf_rc))              # Quanto mais próximo de zero, melhor. Valor encontrado: 0.1298117
-print(h2o.mean_per_class_error(perf_rc)) # Quanto mais próximo de zero, melhor. Valor encontrado: 0.004263429
-
-# Métricas Específicas para Classificação Binomial
-print(h2o.auc(perf_rc))                  # Um valor próximo de 1 indica bom desempenho. Valor encontrado: 0.9999331
-print(h2o.aucpr(perf_rc))                # Um valor próximo de 1 indica bom desempenho. Valor encontrado: 0.9999264
-
-# Matriz de Confusão
-h2o.confusionMatrix(perf_rc)             # Fornece uma visão detalhada do desempenho do modelo para cada classe.
+# MSE                 :  0.02246815    -    Quanto mais próximo de zero, melhor. Valor encontrado: 0.02246815
+# RMSE                :  0.1498938     -    Valores menores indicam melhor desempenho. Valor encontrado: 0.1498938
+# LogLoss             :  0.1298117     -    Quanto mais próximo de zero, melhor. Valor encontrado: 0.1298117
+# Mean Per-Class Error:  0.004263429   -    Quanto mais próximo de zero, melhor. Valor encontrado: 0.004263429
+# AUC                 :  0.9999331     -    Um valor próximo de 1 indica bom desempenho. Valor encontrado: 0.9999331
+# AUCPR               :  0.9999264     -    Um valor próximo de 1 indica bom desempenho. Valor encontrado: 0.9999264
+# Gini                :  0.9998663
+# R^2                 :  0.9099157
 
 
 ## Avaliação do Modelo Binomial (Taxa de Cancelamento)
-perf_tc <- h2o.performance(lider_automl_tc)
+perf_tc <- h2o.performance(modelo_tc)
 perf_tc
 
 
 ## Avaliação do Modelo Deep Learning (Produto Recomendado)
-perf_pr <- h2o.performance(lider_automl_pr)
+perf_pr <- h2o.performance(modelo_pr)
 perf_pr
 
+head(dados)
 
 
-## Plot da Importância das Variáveis
+
+
+## Respondendo Perguntas de Negócio
 
 # Extraindo do melhor modelo a contribuição de cada variável para as previsões através dos dados de teste
 # Estes valores são chamados de SHAP
-var_contrib <- predict_contributions.H2OModel(lider_automl, h2o_frame_split[[2]])
-var_contrib
+var_contrib_rc <- predict_contributions.H2OModel(modelo_rc, h2o_frame_split[[2]])
+var_contrib_tc <- predict_contributions.H2OModel(modelo_tc, h2o_frame_split[[2]])
+var_contrib_tc
+
+# Criando um dataframe com os as métricas que precisamos (Forma 1 de obter as variáveis mais importantes usando as métricas SHAP)
+df_var_contrib_rc <- var_contrib_rc %>%
+  as.data.frame() %>%
+  select(-BiasTerm) %>%
+  gather(feature, shap_value) %>%
+  group_by(feature) %>%
+  mutate(shap_importance = mean(abs(shap_value)), shap_force = mean(shap_value)) %>% 
+  ungroup()
+df_var_contrib_tc <- var_contrib_tc %>%
+  as.data.frame() %>%
+  select(-BiasTerm) %>%
+  gather(feature, shap_value) %>%
+  group_by(feature) %>%
+  mutate(shap_importance = mean(abs(shap_value)), shap_force = mean(shap_value)) %>% 
+  ungroup()
+View(df_var_contrib_rc)
+
+# Visualizando a média da importância de cada variável
+importance_summary_rc <- df_var_contrib_rc %>%
+  group_by(feature) %>%
+  summarise(mean_shap_importance = mean(shap_importance),
+            mean_shap_force = mean(shap_force)) %>% 
+  arrange(-mean_shap_importance)
+importance_summary_tc <- df_var_contrib_tc %>%
+  group_by(feature) %>%
+  summarise(mean_shap_importance = mean(shap_importance),
+            mean_shap_force = mean(shap_force)) %>% 
+  arrange(-mean_shap_importance)
+print(importance_summary_rc)
+
+
+
+## 1) Quais são os principais fatores que influenciam a decisão de compra dos usuários?
+##    Identificar as variáveis mais impactantes que contribuem para as decisões de compra dos usuários.
+
+# Gráfico de barras da importância de cada variável para prever a variável realizou compra
+df_var_contrib_gra <- df_var_contrib_rc %>% 
+  select(feature, shap_importance) %>%
+  distinct() %>% 
+  ggplot(aes(x = reorder(feature, shap_importance), y = shap_importance)) +
+  geom_col(fill = 'blue') +
+  coord_flip() +
+  xlab(NULL) +
+  ylab("Valor Médio das Métricas SHAP") +
+  theme_minimal(base_size = 15)
+df_var_contrib_gra
+
+
+## 2) Qual é o melhor modelo de sistema de recomendação para personalizar as sugestões de produtos?
+##    Avaliar diferentes algoritmos de sistemas de recomendação, como filtragem colaborativa, filtragem baseada em conteúdo ou híbridos, 
+##    para determinar o mais eficaz.
+
 
 
 
@@ -808,3 +875,421 @@ var_contrib
 ## Desliga o H2O
 h2o.shutdown()
 
+
+
+
+#### Interface gráfica
+
+## Inicialização do h2o
+h2o.init()
+
+## Carregando Modelos 
+modelo_rc <- h2o.loadModel("modelos/modelo_automl_rc/XGBoost_AutoML")
+modelo_tc <- h2o.loadModel("modelos/modelo_automl_tc/XGBoost")
+modelo_pr <- h2o.loadModel("modelos/modelo_automl_pr/GLM_1_AutoML")
+
+
+modelo_rc
+modelo_tc
+modelo_pr
+
+
+
+
+
+## Interface Realizou Compra
+
+# UI
+ui <- fluidPage(
+  titlePanel("Previsão de Compra - Modelo RC"),
+  
+  sidebarLayout(
+    sidebarPanel(
+      # Entradas do usuário
+      numericInput("idade_input", "Idade:", min = 18, max = 100, value = 25),
+      selectInput("genero_input", "Gênero:", choices = c("Feminino", "Masculino"), selected = "Feminino"),
+      selectInput("historico_input", "Histórico de Compras:", choices = c("Alto", "Baixo", "Médio"), selected = "Alto"),
+      selectInput("categoria_input", "Categoria Preferida:", choices = unique(dados$categoria_preferida), selected = unique(dados$categoria_preferida)[1]),
+      numericInput("tempo_input", "Tempo na Plataforma (em meses):", min = 1, max = 100, value = 10),
+      numericInput("produtos_input", "Produtos Visualizados:", min = 1, max = 100, value = 20),
+      selectInput("atividade_input", "Nível de Atividade:", choices = c("Alto", "Baixo", "Médio"), selected = "Alto"),
+      actionButton("previsao_btn", "Fazer Previsão")
+    ),
+    mainPanel(
+      # Saída
+      textOutput("resultado_texto")
+    )
+  )
+)
+
+# Server
+server <- function(input, output) {
+  
+  observeEvent(input$previsao_btn, {
+    # Criando um data frame temporário com os dados inseridos pelo usuário
+    novo_dado <- data.frame(
+      idade = input$idade_input,
+      genero = input$genero_input,
+      historico_compras = input$historico_input,
+      categoria_preferida = input$categoria_input,
+      tempo_na_plataforma = input$tempo_input,
+      produtos_visualizados = input$produtos_input,
+      nivel_atividade = input$atividade_input
+    )
+    
+    # Modificando qualquer variável chr para factor
+    novo_dado <- novo_dado %>% mutate_if(is.character, factor)
+    
+    # Criação de Novas Características (Variáveis)
+    novo_dado <- novo_dado %>% mutate(
+      razao_produtos_tempo = produtos_visualizados / tempo_na_plataforma,
+      interacao_idade_produtos = idade * produtos_visualizados
+    )
+    
+    # Adicionando colunas temporárias faltantes
+    novo_dado$produto_recomendado <- NA
+    novo_dado$churn <- NA
+    
+    # Fazendo a previsão
+    previsao <- h2o.predict(modelo_rc, as.h2o(novo_dado))
+    
+    # Mensagem de saída
+    output$resultado_texto <- renderText({
+      if (previsao[1, "predict"] == "Sim") {
+        "SIM. Há uma grande possibilidade do usuário realizar a compra."
+      } else {
+        "NÃO. Há uma grande possibilidade do usuário não realizar a compra."
+      }
+    })
+  })
+}
+
+# Rodando a aplicação
+shinyApp(ui = ui, server = server)
+
+
+
+## Interface Churn
+
+# UI
+ui <- fluidPage(
+  titlePanel("Previsão de Churn - Modelo TC"),
+  
+  sidebarLayout(
+    sidebarPanel(
+      # Entradas do usuário
+      numericInput("idade_input", "Idade:", min = 18, max = 100, value = 25),
+      selectInput("genero_input", "Gênero:", choices = c("Feminino", "Masculino"), selected = "Feminino"),
+      selectInput("historico_input", "Histórico de Compras:", choices = c("Alto", "Baixo", "Médio"), selected = "Alto"),
+      selectInput("categoria_input", "Categoria Preferida:", choices = unique(dados$categoria_preferida), selected = unique(dados$categoria_preferida)[1]),
+      numericInput("tempo_input", "Tempo na Plataforma (em meses):", min = 1, max = 100, value = 10),
+      numericInput("produtos_input", "Produtos Visualizados:", min = 1, max = 100, value = 20),
+      selectInput("atividade_input", "Nível de Atividade:", choices = c("Alto", "Baixo", "Médio"), selected = "Alto"),
+      actionButton("previsao_btn", "Fazer Previsão")
+    ),
+    mainPanel(
+      # Saída
+      textOutput("resultado_texto")
+    )
+  )
+)
+
+# Server
+server <- function(input, output) {
+  
+  observeEvent(input$previsao_btn, {
+    # Criando um data frame temporário com os dados inseridos pelo usuário
+    novo_dado <- data.frame(
+      idade = input$idade_input,
+      genero = input$genero_input,
+      historico_compras = input$historico_input,
+      categoria_preferida = input$categoria_input,
+      tempo_na_plataforma = input$tempo_input,
+      produtos_visualizados = input$produtos_input,
+      nivel_atividade = input$atividade_input
+    )
+    
+    # Modificando qualquer variável chr para factor
+    novo_dado <- novo_dado %>% mutate_if(is.character, factor)
+    
+    # Criação de Novas Características (Variáveis)
+    novo_dado <- novo_dado %>% mutate(
+      razao_produtos_tempo = produtos_visualizados / tempo_na_plataforma,
+      interacao_idade_produtos = idade * produtos_visualizados
+    )
+    
+    # Adicionando coluna temporária faltante
+    novo_dado$realizou_compra <- NA
+    novo_dado$produto_recomendado <- NA
+    
+    # Fazendo a previsão
+    previsao <- h2o.predict(modelo_tc, as.h2o(novo_dado))
+    
+    # Mensagem de saída
+    output$resultado_texto <- renderText({
+      if (previsao[1, "predict"] == "Sim") {
+        "SIM. Há uma grande possibilidade do usuário cancelar o serviço."
+      } else {
+        "NÃO. Há uma grande possibilidade do usuário não cancelar o serviço."
+      }
+    })
+  })
+}
+
+# Rodando a aplicação
+shinyApp(ui = ui, server = server)
+
+
+
+## Interface Produtos Recomendados
+
+# UI
+ui <- fluidPage(
+  titlePanel("Recomendação de Produtos - Modelo PR"),
+  
+  sidebarLayout(
+    sidebarPanel(
+      # Entradas do usuário
+      numericInput("idade_input", "Idade:", min = 18, max = 100, value = 25),
+      selectInput("genero_input", "Gênero:", choices = c("Feminino", "Masculino"), selected = "Feminino"),
+      selectInput("historico_input", "Histórico de Compras:", choices = c("Alto", "Baixo", "Médio"), selected = "Alto"),
+      selectInput("categoria_input", "Categoria Preferida:", choices = unique(dados$categoria_preferida), selected = unique(dados$categoria_preferida)[1]),
+      numericInput("tempo_input", "Tempo na Plataforma (em meses):", min = 1, max = 100, value = 10),
+      numericInput("produtos_input", "Produtos Visualizados:", min = 1, max = 100, value = 20),
+      selectInput("atividade_input", "Nível de Atividade:", choices = c("Alto", "Baixo", "Médio"), selected = "Alto"),
+      actionButton("recomendacao_btn", "Recomendar Produtos")
+    ),
+    mainPanel(
+      # Saída
+      textOutput("resultado_texto")
+    )
+  )
+)
+
+# Server
+server <- function(input, output) {
+  
+  observeEvent(input$recomendacao_btn, {
+    # Criando um data frame temporário com os dados inseridos pelo usuário
+    novo_dado <- data.frame(
+      idade = input$idade_input,
+      genero = input$genero_input,
+      historico_compras = input$historico_input,
+      categoria_preferida = input$categoria_input,
+      tempo_na_plataforma = input$tempo_input,
+      produtos_visualizados = input$produtos_input,
+      nivel_atividade = input$atividade_input
+    )
+    
+    # Modificando qualquer variável chr para factor
+    novo_dado <- novo_dado %>% mutate_if(is.character, factor)
+    
+    # Criação de Novas Características (Variáveis)
+    novo_dado <- novo_dado %>% mutate(
+      razao_produtos_tempo = produtos_visualizados / tempo_na_plataforma,
+      interacao_idade_produtos = idade * produtos_visualizados
+    )
+    
+    # Adicionando colunas temporárias faltantes
+    novo_dado$realizou_compra <- NA
+    novo_dado$churn <- NA
+    
+    # Fazendo a previsão
+    previsao <- h2o.predict(modelo_pr, as.h2o(novo_dado))
+    
+    # Mensagem de saída
+    output$resultado_texto <- renderText({
+      paste("Produto Recomendado:", previsao[1, "predict"])
+    })
+  })
+}
+
+# Rodando a aplicação
+shinyApp(ui = ui, server = server)
+
+
+
+
+### Interface 3 Modelos
+
+library(shiny)
+library(dplyr)
+
+# Função para realizar a previsão com os modelos
+realizar_previsao <- function(modelo, novo_dado) {
+  # Modificando qualquer variável chr para factor
+  novo_dado <- novo_dado %>% mutate_if(is.character, factor)
+  
+  # Criação de Novas Características (Variáveis)
+  novo_dado <- novo_dado %>% mutate(
+    razao_produtos_tempo = produtos_visualizados / tempo_na_plataforma,
+    interacao_idade_produtos = idade * produtos_visualizados
+  )
+  
+  # Adicionando colunas temporárias faltantes
+  if (!("realizou_compra" %in% colnames(novo_dado))) novo_dado$realizou_compra <- NA
+  if (!("churn" %in% colnames(novo_dado))) novo_dado$churn <- NA
+  if (!("produto_recomendado" %in% colnames(novo_dado))) novo_dado$produto_recomendado <- NA
+  
+  # Fazendo a previsão
+  previsao <- h2o.predict(modelo, as.h2o(novo_dado))
+  
+  return(previsao)
+}
+
+# UI principal
+ui <- fluidPage(
+  titlePanel("Escolha do Modelo"),
+  
+  sidebarLayout(
+    sidebarPanel(
+      # Escolha do modelo
+      selectInput("modelo_input", "Escolha o Modelo:",
+                  choices = c("PrevisaoCompra", "PrevisaoChurn", "RecomendacaoProdutos")),
+    ),
+    mainPanel(
+      # Conteúdo da interface do modelo escolhido
+      uiOutput("modelo_ui"),
+      # Saída
+      textOutput("resultado_texto")
+    )
+  )
+)
+
+# Server principal
+server <- function(input, output, session) {
+  
+  # Função para criar a interface do modelo escolhido
+  output$modelo_ui <- renderUI({
+    modelo_escolhido <- input$modelo_input
+    
+    # Criar a interface do modelo escolhido
+    if (!is.null(modelo_escolhido)) {
+      
+      if (modelo_escolhido == "PrevisaoCompra") {
+        # Interface do modelo PrevisaoCompra
+        fluidPage(
+          titlePanel("Previsão de Compra - Modelo RC"),
+          numericInput("idade_input", "Idade:", min = 18, max = 100, value = 25),
+          selectInput("genero_input", "Gênero:", choices = c("Feminino", "Masculino"), selected = "Feminino"),
+          selectInput("historico_input", "Histórico de Compras:", choices = c("Alto", "Baixo", "Médio"), selected = "Alto"),
+          selectInput("categoria_input", "Categoria Preferida:", choices = unique(dados$categoria_preferida), selected = unique(dados$categoria_preferida)[1]),
+          numericInput("tempo_input", "Tempo na Plataforma (em meses):", min = 1, max = 100, value = 10),
+          numericInput("produtos_input", "Produtos Visualizados:", min = 1, max = 100, value = 20),
+          selectInput("atividade_input", "Nível de Atividade:", choices = c("Alto", "Baixo", "Médio"), selected = "Alto"),
+          actionButton("previsao_btn", "Fazer Previsão")
+        )
+        
+      } else if (modelo_escolhido == "PrevisaoChurn") {
+        # Interface do modelo PrevisaoChurn
+        fluidPage(
+          titlePanel("Previsão de Churn - Modelo TC"),
+          numericInput("idade_input", "Idade:", min = 18, max = 100, value = 25),
+          selectInput("genero_input", "Gênero:", choices = c("Feminino", "Masculino"), selected = "Feminino"),
+          selectInput("historico_input", "Histórico de Compras:", choices = c("Alto", "Baixo", "Médio"), selected = "Alto"),
+          selectInput("categoria_input", "Categoria Preferida:", choices = unique(dados$categoria_preferida), selected = unique(dados$categoria_preferida)[1]),
+          numericInput("tempo_input", "Tempo na Plataforma (em meses):", min = 1, max = 100, value = 10),
+          numericInput("produtos_input", "Produtos Visualizados:", min = 1, max = 100, value = 20),
+          selectInput("atividade_input", "Nível de Atividade:", choices = c("Alto", "Baixo", "Médio"), selected = "Alto"),
+          actionButton("previsao_btn", "Fazer Previsão")
+        )
+        
+      } else if (modelo_escolhido == "RecomendacaoProdutos") {
+        # Interface do modelo RecomendacaoProdutos
+        fluidPage(
+          titlePanel("Recomendação de Produtos - Modelo PR"),
+          numericInput("idade_input", "Idade:", min = 18, max = 100, value = 25),
+          selectInput("genero_input", "Gênero:", choices = c("Feminino", "Masculino"), selected = "Feminino"),
+          selectInput("historico_input", "Histórico de Compras:", choices = c("Alto", "Baixo", "Médio"), selected = "Alto"),
+          selectInput("categoria_input", "Categoria Preferida:", choices = unique(dados$categoria_preferida), selected = unique(dados$categoria_preferida)[1]),
+          numericInput("tempo_input", "Tempo na Plataforma (em meses):", min = 1, max = 100, value = 10),
+          numericInput("produtos_input", "Produtos Visualizados:", min = 1, max = 100, value = 20),
+          selectInput("atividade_input", "Nível de Atividade:", choices = c("Alto", "Baixo", "Médio"), selected = "Alto"),
+          actionButton("recomendacao_btn", "Recomendar Produtos")
+        )
+      }
+    }
+  })
+  
+  # Lógica para realizar a previsão
+  observeEvent(input$previsao_btn, {
+    # Criando um data frame temporário com os dados inseridos pelo usuário
+    novo_dado <- data.frame(
+      idade = input$idade_input,
+      genero = input$genero_input,
+      historico_compras = input$historico_input,
+      categoria_preferida = input$categoria_input,
+      tempo_na_plataforma = input$tempo_input,
+      produtos_visualizados = input$produtos_input,
+      nivel_atividade = input$atividade_input
+    )
+    
+    # Realizar previsão com base no modelo escolhido
+    previsao <- switch(
+      input$modelo_input,
+      PrevisaoCompra = realizar_previsao(modelo_rc, novo_dado),
+      PrevisaoChurn = realizar_previsao(modelo_tc, novo_dado),
+      RecomendacaoProdutos = realizar_previsao(modelo_pr, novo_dado)
+    )
+    
+    # Mensagem de saída
+    output$resultado_texto <- renderText({
+      if (previsao[1, "predict"] == "Sim") {
+        "SIM. Há uma grande possibilidade do usuário realizar a ação desejada."
+      } else {
+        "NÃO. Há uma grande possibilidade do usuário não realizar a ação desejada."
+      }
+    })
+  })
+  
+  # Lógica específica para RecomendacaoProdutos
+  observeEvent(input$recomendacao_btn, {
+    # Criando um data frame temporário com os dados inseridos pelo usuário
+    novo_dado <- data.frame(
+      idade = input$idade_input,
+      genero = input$genero_input,
+      historico_compras = input$historico_input,
+      categoria_preferida = input$categoria_input,
+      tempo_na_plataforma = input$tempo_input,
+      produtos_visualizados = input$produtos_input,
+      nivel_atividade = input$atividade_input
+    )
+    
+    # Realizar previsão com base no modelo escolhido
+    previsao <- realizar_previsao(modelo_pr, novo_dado)
+    
+    # Mensagem de saída
+    output$resultado_texto <- renderText({
+      paste("Produto Recomendado:", previsao[1, "predict"])
+    })
+  })
+}
+
+# Rodando a aplicação
+shinyApp(ui = ui, server = server)
+
+
+
+
+
+
+
+
+
+
+
+
+## Desliga o H2O
+h2o.shutdown()
+
+
+
+
+
+
+
+head(dados)
+str(dados)
+h2o.varimp(modelo_rc)
+h2o.varimp(modelo_tc)
+h2o.varimp(modelo_pr)
