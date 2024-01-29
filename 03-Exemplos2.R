@@ -15,8 +15,7 @@ library(randomForest)   # carrega algoritimo de ML
 library(ROCR)           # Gerando uma curva ROC em R
 library(caret)          # cria confusion matrix
 library(readxl)         # carregar arquivos 
-library(glmnet)         # carrega algoritimo de ML    
-library(nnet)
+library(glmnet)         # carrega algoritimo de ML
 
 
 
@@ -119,8 +118,8 @@ table(dados$cod_classe)
 #  erupções solares da classe H.
 
 
-# Preencher valores ausentes (caso necessário)
-dados <- na.omit(dados)  # Remove linhas com valores ausentes
+# Verificando valores ausentes
+dados <- na.omit(dados)        # Remove linhas com valores ausentes
 
 
 
@@ -380,27 +379,3 @@ confusionMatrix(predictions_H_v2, test_data$cod_h)                              
 
 
 
-# Ajustar as características de novos_dados
-novos_dados <- data.frame(
-  data = c("03.28.69.to.04.10.69", "03.28.69.to.04.10.69", "03.28.69.to.04.10.69", "03.28.69.to.04.10.69", "03.28.69.to.04.10.69"),
-  cod_classe = c("C", "D", "B", "D", "C"),
-  cod_tam_mancha_solar = c("S", "A", "X", "S", "A"),
-  cod_dist_manchas_solares = c("O", "O", "O", "O", "I"),
-  atividade = c(1, 1, 1, 1, 1),
-  evolucao = c(2, 3, 2, 2, 2),
-  cod_atividade_flare_24hs = c(1, 1, 1, 1, 1),
-  historicamente_complexo = c(1, 1, 1, 1, 1),
-  regiao_complexa_disco_solar = c(2, 2, 2, 2, 1),
-  area = c(1, 1, 1, 1, 1),
-  area_maior_mancha = c(2, 2, 1, 2, 2)
-)
-
-# Modificando variáveis para tipo factor
-novos_dados <- novos_dados %>%
-  mutate_if(is.character, factor)
-
-# Fazer previsões usando o modelo de classe C
-predictions_novos <- predict(model_C, newdata = novos_dados)
-
-# Exibir as previsões
-print(predictions_novos)
